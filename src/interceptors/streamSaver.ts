@@ -1,5 +1,5 @@
 import { getMediaSource } from "../item";
-import { PrimarySession } from "../session";
+import { CacheSession } from "../session";
 import type { Interceptor } from "../types";
 import { proxyRequest } from "../utils";
 
@@ -52,6 +52,10 @@ export const streamSaver: Interceptor = {
     }
 
     // get session id
-    return proxyRequest(ctx.request);
+    const response = await proxyRequest(ctx.request);
+
+    console.log(response.headers);
+
+    return response;
   },
 };

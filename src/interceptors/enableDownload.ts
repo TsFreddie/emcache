@@ -1,12 +1,15 @@
+import { PassiveSession } from "../session";
 import type { Interceptor } from "../types";
 
 export const enableDownload: Interceptor = {
-  onRequest(ctx) {
-    const url = new URL(ctx.request.url);
+  async onRequest(ctx) {
+    const url = new URL(ctx.request.url.toLowerCase());
     const path = url.pathname;
 
     // Check if this is an Emby video stream/download route
-    if (!path.startsWith("/emby/Items/") || !path.endsWith("/Download")) {
+    const match = path.match(/^\/emby\/items\/([0-9]+)\/download\/?$/);
+
+    if (!match) {
       return;
     }
     console.log("[Download] Url", ctx.request.url);
@@ -16,9 +19,60 @@ export const enableDownload: Interceptor = {
       console.log(`  ${key}: ${value}`);
     });
 
-    return new Response(undefined, {
-      status: 403,
-      statusText: "Forbidden",
+    const range = ctx.request.headers.get("range") || "bytes=0-";
+    if (!range) {
+      return new Response(undefined, {
+        status: 400,
+        statusText: "Bad Request",
+      });
+    }
+
+    const startByte = parseInt(range.split("=")[1]?.split("-")[0] || "0", 10);
+    if (isNaN(startByte)) {
+      return new Response(undefined, {
+        status: 400,
+        statusText: "Bad Request",
+      });
+    }
+
+    const mediaSourceId = url.searchParams.get("mediasourceid");
+    if (!mediaSourceId) {
+      return new Response(undefined, {
+        status: 404,
+        statusText: "Not Found",
+      });
+    }
+
+    const apiKey = url.searchParams.get("api_key");
+    if (!apiKey) {
+      return new Response(undefined, {
+        status: 403,
+        statusText: "Forbidden",
+      });
+    }
+
+    const session = new PassiveSession(
+      match[1]!,
+      mediaSourceId,
+      ctx.request.headers,
+      apiKey,
+    );
+
+    return new Response(session.read(startByte), {
+      status: 206,
+      headers: {
+        "content-type": `video/${session.mediaSource.container.toLowerCase()}`,
+        "cache-control": "private, no-transform",
+        "content-length": session.mediaSource.size.toString(),
+        "content-range": `bytes ${startByte}-${session.mediaSource.size - 1}/${session.mediaSource.size}`,
+        date: new Date().toUTCString(),
+        "accept-ranges": "bytes",
+        "access-control-allow-headers":
+          "Accept, Accept-Language, Authorization, Cache-Control, Content-Disposition, Content-Encoding, Content-Language, Content-Length, Content-MD5, Content-Range, Content-Type, Date, Host, If-Match, If-Modified-Since, If-None-Match, If-Unmodified-Since, Origin, OriginToken, Pragma, Range, Slug, Transfer-Encoding, Want-Digest, X-MediaBrowser-Token, X-Emby-Token, X-Emby-Client, X-Emby-Client-Version, X-Emby-Device-Id, X-Emby-Device-Name, X-Emby-Authorization",
+        "access-control-allow-methods":
+          "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+        "access-control-allow-origin": "*",
+      },
     });
   },
   async onResponse(ctx, response) {

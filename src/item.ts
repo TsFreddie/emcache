@@ -66,6 +66,7 @@ DB.run(`CREATE TABLE IF NOT EXISTS mediaSources (
   itemId TEXT NOT NULL,
   itemName TEXT NOT NULL,
   sourceName TEXT NOT NULL,
+  size INTEGER NOT NULL,
   container TEXT NOT NULL,
   bitrate INTEGER NOT NULL,
   chunks BLOB,
@@ -78,11 +79,12 @@ DB.run(
   `CREATE INDEX IF NOT EXISTS mediaSources_itemId_index ON mediaSources (itemId);`,
 );
 
-interface MediaSource {
+export interface MediaSource {
   mediaSourceId: string;
   itemId: string;
   itemName: string;
   sourceName: string;
+  size: number;
   container: string;
   bitrate: number;
   chunks: Uint8Array | null;
@@ -103,15 +105,15 @@ const stmtTouchMediaSource = DB.prepare<MediaSource, [string]>(
 );
 
 const stmtInsertMediaSource = DB.prepare(
-  `INSERT OR IGNORE INTO mediaSources (mediaSourceId, itemId, itemName, sourceName, container, bitrate)
-   VALUES (?, ?, ?, ?, ?, ?);`,
+  `INSERT OR IGNORE INTO mediaSources (mediaSourceId, itemId, itemName, sourceName, size, container, bitrate)
+   VALUES (?, ?, ?, ?, ?, ?, ?);`,
 );
 
 const stmtHasMediaSource = DB.prepare<MediaSource, [string]>(
   `SELECT mediaSourceId FROM mediaSources WHERE mediaSourceId = ?;`,
 );
 
-const stmtUpdateChunks = DB.prepare<void, [string, Buffer]>(
+const stmtUpdateChunks = DB.prepare<void, [string, Buffer | null]>(
   `UPDATE mediaSources SET chunks = ? WHERE mediaSourceId = ?;`,
 );
 
@@ -127,7 +129,8 @@ export function touchMediaSource(mediaSourceId: string) {
   stmtTouchMediaSource.run(mediaSourceId);
 }
 
-export function updateChunks(mediaSourceId: string, chunk: Buffer) {
+export function updateChunks(mediaSourceId: string, chunk: Buffer | null) {
+  console.log("updateChunks", chunk);
   stmtUpdateChunks.run(mediaSourceId, chunk);
 }
 
@@ -160,6 +163,10 @@ export function insertMediaSource(
     return false;
   }
 
+  if (isNaN(mediaSource.size)) {
+    return false;
+  }
+
   if (mediaSource.container === "m3u8" || mediaSource.container === "hls") {
     return false;
   }
@@ -173,6 +180,7 @@ export function insertMediaSource(
     mediaSource.itemId,
     mediaSource.itemName,
     mediaSource.sourceName,
+    mediaSource.size,
     mediaSource.container,
     mediaSource.bitrate,
   );
@@ -200,6 +208,7 @@ export function processMediaSource(data: any): number {
         itemId,
         itemName,
         sourceName: sanitizeFilename(ms.Name),
+        size: ms.Size,
         container: ms.Container,
         bitrate: ms.Bitrate,
       })
