@@ -11,6 +11,7 @@ import (
 
 type Store interface {
 	GetMediaSource(ctx context.Context, mediaSourceID string) (store.MediaSource, bool, error)
+	GetPreferredMediaSourceByItemID(ctx context.Context, itemID string) (store.MediaSource, bool, error)
 	UpdateChunks(ctx context.Context, mediaSourceID string, chunks []byte) error
 }
 
@@ -46,23 +47,52 @@ func NewManager(storagePath string, upstreamURL *url.URL, store Store) *Manager 
 }
 
 func (m *Manager) Open(ctx context.Context, mediaSourceID string) (*Handle, error) {
-	m.mu.Lock()
-	if item, ok := m.files[mediaSourceID]; ok {
-		item.refs++
-		handle := &Handle{Source: item.file.Source(), File: item.file}
-		handle.done = func() error { return m.release(context.Background(), mediaSourceID) }
-		m.mu.Unlock()
-		return handle, nil
-	}
-	m.mu.Unlock()
+	return m.open(ctx, mediaSourceID, func() (string, store.MediaSource, bool, error) {
+		source, ok, err := m.Store.GetMediaSource(ctx, mediaSourceID)
+		return mediaSourceID, source, ok, err
+	})
+}
 
-	source, ok, err := m.Store.GetMediaSource(ctx, mediaSourceID)
+func (m *Manager) OpenPreferredByItemID(ctx context.Context, itemID string) (*Handle, error) {
+	return m.open(ctx, "", func() (string, store.MediaSource, bool, error) {
+		source, ok, err := m.Store.GetPreferredMediaSourceByItemID(ctx, itemID)
+		return source.MediaSourceID, source, ok, err
+	})
+}
+
+func (m *Manager) open(ctx context.Context, initialKey string, load func() (string, store.MediaSource, bool, error)) (*Handle, error) {
+	if initialKey != "" {
+		m.mu.Lock()
+		if item, ok := m.files[initialKey]; ok {
+			item.refs++
+			handle := &Handle{Source: item.file.Source(), File: item.file}
+			handle.done = func() error { return m.release(context.Background(), initialKey) }
+			m.mu.Unlock()
+			return handle, nil
+		}
+		m.mu.Unlock()
+	}
+
+	key, source, ok, err := load()
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return nil, ErrMediaSourceNotFound
 	}
+	if key == "" {
+		key = source.MediaSourceID
+	}
+
+	m.mu.Lock()
+	if item, ok := m.files[key]; ok {
+		item.refs++
+		handle := &Handle{Source: item.file.Source(), File: item.file}
+		handle.done = func() error { return m.release(context.Background(), key) }
+		m.mu.Unlock()
+		return handle, nil
+	}
+	m.mu.Unlock()
 
 	file, err := OpenCachedFile(ctx, m.StoragePath, source, m.Store)
 	if err != nil {
@@ -70,19 +100,19 @@ func (m *Manager) Open(ctx context.Context, mediaSourceID string) (*Handle, erro
 	}
 
 	m.mu.Lock()
-	if item, ok := m.files[mediaSourceID]; ok {
+	if item, ok := m.files[key]; ok {
 		item.refs++
 		m.mu.Unlock()
 		_ = file.Close(ctx)
 		handle := &Handle{Source: item.file.Source(), File: item.file}
-		handle.done = func() error { return m.release(context.Background(), mediaSourceID) }
+		handle.done = func() error { return m.release(context.Background(), key) }
 		return handle, nil
 	}
-	m.files[mediaSourceID] = &openFile{refs: 1, file: file}
+	m.files[key] = &openFile{refs: 1, file: file}
 	m.mu.Unlock()
 
 	handle := &Handle{Source: source, File: file}
-	handle.done = func() error { return m.release(context.Background(), mediaSourceID) }
+	handle.done = func() error { return m.release(context.Background(), key) }
 	return handle, nil
 }
 

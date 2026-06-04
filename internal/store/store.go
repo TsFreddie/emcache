@@ -124,6 +124,35 @@ WHERE media_source_id = ?
 	return source, true, nil
 }
 
+func (s *Store) GetPreferredMediaSourceByItemID(ctx context.Context, itemID string) (MediaSource, bool, error) {
+	var source MediaSource
+	err := s.db.QueryRowContext(ctx, `
+SELECT media_source_id, item_id, item_name, source_name, size, container, bitrate, chunks, created_at, updated_at
+FROM media_sources
+WHERE item_id = ?
+ORDER BY bitrate DESC, size DESC
+LIMIT 1
+`, itemID).Scan(
+		&source.MediaSourceID,
+		&source.ItemID,
+		&source.ItemName,
+		&source.SourceName,
+		&source.Size,
+		&source.Container,
+		&source.Bitrate,
+		&source.Chunks,
+		&source.CreatedAt,
+		&source.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return MediaSource{}, false, nil
+	}
+	if err != nil {
+		return MediaSource{}, false, err
+	}
+	return source, true, nil
+}
+
 func (s *Store) UpdateChunks(ctx context.Context, mediaSourceID string, chunks []byte) error {
 	_, err := s.db.ExecContext(ctx, `
 UPDATE media_sources

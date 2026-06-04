@@ -11,7 +11,7 @@ import (
 	"emby-proxy-cache/internal/cache"
 )
 
-var videoStreamPath = regexp.MustCompile(`^/emby/videos/[0-9]+/(stream|original)\.([a-zA-Z0-9]+)$`)
+var videoStreamPath = regexp.MustCompile(`^/emby/videos/([0-9]+)/(stream|original)\.([a-zA-Z0-9]+)$`)
 
 type StreamCache struct {
 	Base
@@ -31,16 +31,14 @@ func (s StreamCache) OnRequest(ctx *Context) (*http.Response, bool, error) {
 		return nil, false, nil
 	}
 
+	itemID := matches[1]
 	mediaSourceID := firstQuery(req, "MediaSourceId", "mediasourceid")
-	if mediaSourceID == "" {
-		return nil, false, nil
-	}
 	rangeHeader := req.Header.Get("Range")
 	if rangeHeader == "" {
 		return nil, false, nil
 	}
 
-	handle, err := s.Cache.Open(req.Context(), mediaSourceID)
+	handle, err := s.openHandle(req, itemID, mediaSourceID)
 	if err != nil {
 		if err == cache.ErrMediaSourceNotFound {
 			return nil, false, nil
@@ -88,10 +86,21 @@ func (s StreamCache) OnRequest(ctx *Context) (*http.Response, bool, error) {
 	response.Header.Set("Cache-Control", "private, no-transform")
 	response.Header.Set("Content-Length", strconv.FormatInt(response.ContentLength, 10))
 	response.Header.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, handle.Source.Size))
-	response.Header.Set("Content-Type", contentTypeForContainer(matches[2]))
+	response.Header.Set("Content-Type", contentTypeForContainer(matches[3]))
 
-	fmt.Printf("[StreamCache] active mediaSource=%s range=%d-%d/%d startChunk=%d pending=%d\n", mediaSourceID, start, end, handle.Source.Size, start/cache.ChunkSize, handle.File.PendingCount())
+	fmt.Printf("[StreamCache] active mediaSource=%s item=%s range=%d-%d/%d startChunk=%d pending=%d\n", handle.Source.MediaSourceID, itemID, start, end, handle.Source.Size, start/cache.ChunkSize, handle.File.PendingCount())
 	return response, true, nil
+}
+
+func (s StreamCache) openHandle(req *http.Request, itemID, mediaSourceID string) (*cache.Handle, error) {
+	if mediaSourceID != "" {
+		return s.Cache.Open(req.Context(), mediaSourceID)
+	}
+	handle, err := s.Cache.OpenPreferredByItemID(req.Context(), itemID)
+	if err == nil {
+		fmt.Printf("[StreamCache] resolved empty MediaSourceId item=%s mediaSource=%s\n", itemID, handle.Source.MediaSourceID)
+	}
+	return handle, err
 }
 
 func parseUpstreamURL(raw string) (*url.URL, error) {
