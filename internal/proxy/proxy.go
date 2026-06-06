@@ -60,7 +60,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !handled {
-		response, err = p.forward(r, upstreamURL)
+		request := ctx.Request
+		upstreamURL = p.buildUpstreamURL(request.URL)
+		ctx.UpstreamURL = upstreamURL.String()
+		response, err = p.forward(request, upstreamURL)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return

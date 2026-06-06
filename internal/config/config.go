@@ -11,6 +11,7 @@ type Config struct {
 	Host        string
 	Port        int
 	StoragePath string
+	MaxSessions int
 }
 
 func Load() (Config, error) {
@@ -24,12 +25,17 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	maxSessions, err := strconv.Atoi(getenv("MAX_SESSIONS", "1"))
+	if err != nil {
+		return Config{}, err
+	}
 
 	return Config{
 		UpstreamURL: upstreamURL,
 		Host:        getenv("HOST", "0.0.0.0"),
 		Port:        port,
 		StoragePath: getenv("STORAGE_PATH", "./storage"),
+		MaxSessions: maxSessions,
 	}, nil
 }
 

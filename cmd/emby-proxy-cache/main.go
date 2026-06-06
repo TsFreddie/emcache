@@ -31,8 +31,10 @@ func main() {
 	defer store.Close()
 
 	cacheManager := cache.NewManager(cfg.StoragePath, cfg.UpstreamURL, store)
+	playbackEventLog := &interceptor.PlaybackEventLog{MaxSessions: cfg.MaxSessions}
 	chain := []interceptor.Interceptor{
 		interceptor.StreamCache{Cache: cacheManager},
+		playbackEventLog,
 		interceptor.ItemCapture{Store: store},
 		interceptor.Logger{},
 	}
