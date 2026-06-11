@@ -2,9 +2,10 @@ package cache
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
+
+	"emby-proxy-cache/internal/logging"
 )
 
 const downloadResumeDelay = 5 * time.Second
@@ -32,7 +33,7 @@ func (g *DownloadGate) ActiveStarted() func() {
 	g.cond.Broadcast()
 	active := g.activeStreams
 	g.mu.Unlock()
-	fmt.Printf("[DownloadGate] active stream opened active=%d\n", active)
+	logging.Verbosef("[DownloadGate] active stream opened active=%d\n", active)
 
 	var once sync.Once
 	return func() {
@@ -45,7 +46,7 @@ func (g *DownloadGate) ActiveStarted() func() {
 			active := g.activeStreams
 			g.cond.Broadcast()
 			g.mu.Unlock()
-			fmt.Printf("[DownloadGate] active stream closed active=%d\n", active)
+			logging.Verbosef("[DownloadGate] active stream closed active=%d\n", active)
 		})
 	}
 }

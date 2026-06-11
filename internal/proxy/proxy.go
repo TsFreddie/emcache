@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"emby-proxy-cache/internal/interceptor"
+	"emby-proxy-cache/internal/logging"
 	"emby-proxy-cache/internal/upstream"
 )
 
@@ -119,7 +120,14 @@ func (p *Proxy) forward(r *http.Request, upstreamURL *url.URL) (*http.Response, 
 
 func (p *Proxy) writeResponse(w http.ResponseWriter, r *http.Request, response *http.Response) {
 	copyResponseHeaders(w.Header(), response.Header)
+	flushHeaders := shouldFlushHeaders(response)
+	w.Header().Del("X-Emby-Proxy-Flush-Headers")
 	w.WriteHeader(response.StatusCode)
+	if flushHeaders {
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+	}
 
 	if response.Body == nil {
 		return
@@ -220,12 +228,12 @@ func (w *countingWriter) Write(p []byte) (int, error) {
 	timer := time.AfterFunc(writeStall, func() {
 		stalled.Store(true)
 		if w.isStream {
-			fmt.Printf("[HTTP] stream write stalled %s wrote=%dB pending=%dB stall=%s\n", w.path, w.written, len(p), writeStall)
+			logging.Verbosef("[HTTP] stream write stalled %s wrote=%dB pending=%dB stall=%s\n", w.path, w.written, len(p), writeStall)
 		}
 	})
 	n, err := w.writer.Write(p)
 	if !timer.Stop() && stalled.Load() && w.isStream {
-		fmt.Printf("[HTTP] stream write resumed %s wrote=%dB after=%s err=%v\n", w.path, w.written+int64(n), time.Since(started).Round(time.Millisecond), err)
+		logging.Verbosef("[HTTP] stream write resumed %s wrote=%dB after=%s err=%v\n", w.path, w.written+int64(n), time.Since(started).Round(time.Millisecond), err)
 	}
 	w.written += int64(n)
 	w.unflushed += int64(n)
@@ -264,6 +272,10 @@ func isStreamResponse(response *http.Response) bool {
 	contentType, _, _ = strings.Cut(contentType, ";")
 	return strings.HasPrefix(contentType, "video/") ||
 		contentType == "application/octet-stream"
+}
+
+func shouldFlushHeaders(response *http.Response) bool {
+	return response.Header.Get("X-Emby-Proxy-Flush-Headers") == "1"
 }
 
 func isClientGone(err error) bool {

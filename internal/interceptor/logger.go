@@ -1,10 +1,11 @@
 package interceptor
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
+
+	"emby-proxy-cache/internal/logging"
 )
 
 type Logger struct {
@@ -15,16 +16,16 @@ func (Logger) OnRequest(ctx *Context) (*http.Response, bool, error) {
 	req := ctx.Request
 	rangeHeader := req.Header.Get("Range")
 	if rangeHeader != "" {
-		fmt.Printf("[HTTP] %s %s range=%s\n", req.Method, req.URL.RequestURI(), rangeHeader)
+		logging.Verbosef("[HTTP] %s %s range=%s\n", req.Method, req.URL.RequestURI(), rangeHeader)
 	} else {
-		fmt.Printf("[HTTP] %s %s\n", req.Method, req.URL.RequestURI())
+		logging.Verbosef("[HTTP] %s %s\n", req.Method, req.URL.RequestURI())
 	}
 	return nil, false, nil
 }
 
 func (Logger) OnResponse(ctx *Context, response *http.Response) (*http.Response, error) {
 	if isStreamResponse(response) {
-		fmt.Printf(
+		logging.Verbosef(
 			"[HTTP] -> %d %s content-range=%s content-length=%d content-type=%s\n",
 			response.StatusCode,
 			ctx.Request.URL.Path,
@@ -43,7 +44,7 @@ func LogStreamProgress(path string, pushed int64, socketWritten int64, drains in
 	}
 	mb := float64(pushed) / 1024 / 1024
 	mbps := mb / secs
-	fmt.Printf(
+	logging.Verbosef(
 		"[HTTP] stream %s pushed=%.1fMB socketWrote=%.1fMB @ %.2fMB/s drains=%d\n",
 		path,
 		mb,

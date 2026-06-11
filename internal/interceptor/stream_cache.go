@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"emby-proxy-cache/internal/cache"
+	"emby-proxy-cache/internal/logging"
 )
 
 var videoStreamPath = regexp.MustCompile(`^/emby/videos/([0-9]+)/(stream|original)\.([a-zA-Z0-9]+)$`)
@@ -98,7 +99,7 @@ func (s StreamCache) openHandle(req *http.Request, itemID, mediaSourceID string)
 	}
 	handle, err := s.Cache.OpenPreferredByItemID(req.Context(), itemID)
 	if err == nil {
-		fmt.Printf("[StreamCache] resolved empty MediaSourceId item=%s mediaSource=%s\n", itemID, handle.Source.MediaSourceID)
+		logging.Verbosef("[StreamCache] resolved empty MediaSourceId item=%s mediaSource=%s\n", itemID, handle.Source.MediaSourceID)
 	}
 	return handle, err
 }

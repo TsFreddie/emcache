@@ -111,6 +111,7 @@ func (e EnableDownload) OnRequest(ctx *Context) (*http.Response, bool, error) {
 	response.Header.Set("Content-Length", strconv.FormatInt(response.ContentLength, 10))
 	response.Header.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, handle.Source.Size))
 	response.Header.Set("Content-Type", "application/octet-stream")
+	response.Header.Set("X-Emby-Proxy-Flush-Headers", "1")
 
 	fmt.Printf("[Download] queued item=%s mediaSource=%s range=%d-%d/%d\n", matches[1], mediaSourceID, start, end, handle.Source.Size)
 	return response, true, nil

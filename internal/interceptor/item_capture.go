@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"emby-proxy-cache/internal/logging"
 	"emby-proxy-cache/internal/store"
 
 	"github.com/fereidani/httpdecompressor"
@@ -68,13 +69,13 @@ func (i ItemCapture) OnResponse(ctx *Context, response *http.Response) (*http.Re
 
 	decodedBody, err := decodeBodyForInspection(body, response.Header.Get("Content-Encoding"))
 	if err != nil {
-		fmt.Printf("[ItemCapture] decode failed %s: %v\n", ctx.Request.URL.Path, err)
+		logging.Verbosef("[ItemCapture] decode failed %s: %v\n", ctx.Request.URL.Path, err)
 		return response, nil
 	}
 
 	var item embyItem
 	if err := json.Unmarshal(decodedBody, &item); err != nil {
-		fmt.Printf("[ItemCapture] parse failed %s: %v\n", ctx.Request.URL.Path, err)
+		logging.Verbosef("[ItemCapture] parse failed %s: %v\n", ctx.Request.URL.Path, err)
 		return response, nil
 	}
 	logInterceptedMediaSources(ctx.Request.URL.Path, item.MediaSources)

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"emby-proxy-cache/internal/logging"
 )
 
 const playbackSessionTTL = 2 * time.Minute
@@ -45,21 +47,21 @@ func (p *PlaybackEventLog) OnRequest(ctx *Context) (*http.Response, bool, error)
 	req.Body = io.NopCloser(bytes.NewReader(body))
 	req.ContentLength = int64(len(body))
 
-	fmt.Printf("[PlaybackEvent] %s %s body=%s\n", req.Method, req.URL.RequestURI(), string(body))
+	logging.Verbosef("[PlaybackEvent] %s %s body=%s\n", req.Method, req.URL.RequestURI(), string(body))
 
 	event, err := parsePlaybackEvent(body)
 	if err != nil {
-		fmt.Printf("[PlaybackEvent] parse failed %s: %v\n", req.URL.Path, err)
+		logging.Verbosef("[PlaybackEvent] parse failed %s: %v\n", req.URL.Path, err)
 		return nil, false, nil
 	}
 	if event.PlaySessionID == "" {
-		fmt.Printf("[PlaybackEvent] decision=passthrough reason=missing-play-session-id path=%s\n", req.URL.Path)
+		logging.Verbosef("[PlaybackEvent] decision=passthrough reason=missing-play-session-id path=%s\n", req.URL.Path)
 		return nil, false, nil
 	}
 	ctx.Request = ctx.Request.WithContext(contextWithPlaybackEvent(req, event.PlaySessionID).Context())
 	req = ctx.Request
 	if p.MaxSessions < 0 {
-		fmt.Printf("[PlaybackEvent] decision=passthrough reason=limit-disabled path=%s playSessionId=%s max=%d\n", req.URL.Path, event.PlaySessionID, p.MaxSessions)
+		logging.Verbosef("[PlaybackEvent] decision=passthrough reason=limit-disabled path=%s playSessionId=%s max=%d\n", req.URL.Path, event.PlaySessionID, p.MaxSessions)
 		return nil, false, nil
 	}
 
@@ -69,7 +71,7 @@ func (p *PlaybackEventLog) OnRequest(ctx *Context) (*http.Response, bool, error)
 			fmt.Printf("[PlaybackEvent] decision=blocked path=%s playSessionId=%s active=%d max=%d\n", req.URL.Path, event.PlaySessionID, p.active(), p.MaxSessions)
 			return playbackBlockedResponse(req), true, nil
 		}
-		fmt.Printf("[PlaybackEvent] decision=passthrough path=%s playSessionId=%s active=%d max=%d\n", req.URL.Path, event.PlaySessionID, p.active(), p.MaxSessions)
+		logging.Verbosef("[PlaybackEvent] decision=passthrough path=%s playSessionId=%s active=%d max=%d\n", req.URL.Path, event.PlaySessionID, p.active(), p.MaxSessions)
 	case "/emby/Sessions/Playing/Progress":
 		if !p.tracked(event.PlaySessionID) {
 			if !p.acquire(event.PlaySessionID) {
@@ -83,7 +85,7 @@ func (p *PlaybackEventLog) OnRequest(ctx *Context) (*http.Response, bool, error)
 			fmt.Printf("[PlaybackEvent] decision=passthrough action=promoted-progress originalPath=/emby/Sessions/Playing/Progress path=%s playSessionId=%s active=%d max=%d\n", req.URL.Path, event.PlaySessionID, p.active(), p.MaxSessions)
 			return nil, false, nil
 		}
-		fmt.Printf("[PlaybackEvent] decision=passthrough path=%s playSessionId=%s active=%d max=%d\n", req.URL.Path, event.PlaySessionID, p.active(), p.MaxSessions)
+		logging.Verbosef("[PlaybackEvent] decision=passthrough path=%s playSessionId=%s active=%d max=%d\n", req.URL.Path, event.PlaySessionID, p.active(), p.MaxSessions)
 	case "/emby/Sessions/Playing/Stopped":
 		if !p.tracked(event.PlaySessionID) {
 			fmt.Printf("[PlaybackEvent] decision=blocked reason=untracked-session path=%s playSessionId=%s active=%d max=%d\n", req.URL.Path, event.PlaySessionID, p.active(), p.MaxSessions)
@@ -122,7 +124,7 @@ func (p *PlaybackEventLog) OnResponse(ctx *Context, response *http.Response) (*h
 			response.Header.Set("Content-Length", fmt.Sprintf("%d", len(body)))
 		}
 	}
-	fmt.Printf("[PlaybackEvent] response path=%s playSessionId=%s statusCode=%d status=%q body=%s\n", ctx.Request.URL.Path, event.PlaySessionID, statusCode, status, string(body))
+	logging.Verbosef("[PlaybackEvent] response path=%s playSessionId=%s statusCode=%d status=%q body=%s\n", ctx.Request.URL.Path, event.PlaySessionID, statusCode, status, string(body))
 	return response, nil
 }
 

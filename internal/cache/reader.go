@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"emby-proxy-cache/internal/logging"
 )
 
 const fillProgressLogInterval = 5 * time.Second
@@ -58,7 +60,7 @@ func (f *CachedFile) ReadRange(ctx context.Context, start, end int64, fetch Fetc
 	}
 	firstChunk := int(start / ChunkSize)
 	lastChunk := int(end / ChunkSize)
-	fmt.Printf(
+	logging.Verbosef(
 		"[StreamCache] client range mediaSource=%s start=%d end=%d firstChunk=%d lastChunk=%d totalChunks=%d\n",
 		f.source.MediaSourceID,
 		start,
@@ -145,7 +147,7 @@ func (r *rangeReader) ensureChunk(index int) error {
 		}
 		pending, claimed := r.file.AwaitOrClaim(index)
 		if claimed {
-			fmt.Printf("[StreamCache] fill current mediaSource=%s chunk=%d\n", r.file.Source().MediaSourceID, index)
+			logging.Verbosef("[StreamCache] fill current mediaSource=%s chunk=%d\n", r.file.Source().MediaSourceID, index)
 			return r.fetchCurrentChunk(index, pending)
 		}
 		if pending == nil {
@@ -159,7 +161,7 @@ func (r *rangeReader) ensureChunk(index int) error {
 				return nil
 			}
 			if r.ctx.Err() == nil && (errors.Is(pending.err, context.Canceled) || errors.Is(pending.err, context.DeadlineExceeded)) {
-				fmt.Printf("[StreamCache] retry canceled pending mediaSource=%s chunk=%d\n", r.file.Source().MediaSourceID, index)
+				logging.Verbosef("[StreamCache] retry canceled pending mediaSource=%s chunk=%d\n", r.file.Source().MediaSourceID, index)
 				continue
 			}
 			return pending.err
@@ -208,7 +210,7 @@ func (r *rangeReader) cancelReadahead(requestedIndex int) *chunkFetch {
 	if fill != nil && fill.index != requestedIndex {
 		r.fill = nil
 		fill.cancel()
-		fmt.Printf("[StreamCache] preempt readahead mediaSource=%s fromChunk=%d requestedChunk=%d\n", r.file.Source().MediaSourceID, fill.index, requestedIndex)
+		logging.Verbosef("[StreamCache] preempt readahead mediaSource=%s fromChunk=%d requestedChunk=%d\n", r.file.Source().MediaSourceID, fill.index, requestedIndex)
 		return fill.pending
 	}
 	return nil
@@ -235,7 +237,7 @@ func (r *rangeReader) startFillFromNextMissing(index int) {
 	r.fill = &activeFill{index: missingIndex, pending: pending, cancel: cancel}
 	r.fillMu.Unlock()
 
-	fmt.Printf("[StreamCache] fill readahead mediaSource=%s fromChunk=%d requestedChunk=%d\n", r.file.Source().MediaSourceID, missingIndex, index)
+	logging.Verbosef("[StreamCache] fill readahead mediaSource=%s fromChunk=%d requestedChunk=%d\n", r.file.Source().MediaSourceID, missingIndex, index)
 	go func() {
 		fetchFromChunk(fillCtx, r.file, missingIndex, pending, r.fetch)
 		r.fillMu.Lock()
@@ -249,6 +251,10 @@ func (r *rangeReader) startFillFromNextMissing(index int) {
 func fetchFromChunk(ctx context.Context, file *CachedFile, startIndex int, firstPending *chunkFetch, options FetchOptions) {
 	err := fetchSequential(ctx, file, startIndex, firstPending, options)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			logging.Verbosef("[StreamCache] fill canceled mediaSource=%s chunk=%d: %v\n", file.Source().MediaSourceID, startIndex, err)
+			return
+		}
 		fmt.Printf("[StreamCache] fill failed mediaSource=%s chunk=%d: %v\n", file.Source().MediaSourceID, startIndex, err)
 	}
 }
@@ -469,7 +475,7 @@ func (p *fillProgress) Download(bytes int64) {
 		return
 	}
 	p.lastLog = time.Now()
-	fmt.Printf(
+	logging.Verbosef(
 		"[StreamCache] fill progress mediaSource=%s downloaded=%.1fMB cached=%.1fMB speed=%.2fMB/s remaining=%.1fMB\n",
 		p.mediaSourceID,
 		mb(p.downloaded),
