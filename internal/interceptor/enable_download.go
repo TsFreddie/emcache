@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"emby-proxy-cache/internal/cache"
+	"encache/internal/cache"
 
 	"github.com/fereidani/httpdecompressor"
 )

@@ -8,12 +8,12 @@ import (
 	"os"
 	"time"
 
-	"emby-proxy-cache/internal/cache"
-	"emby-proxy-cache/internal/config"
-	"emby-proxy-cache/internal/interceptor"
-	"emby-proxy-cache/internal/proxy"
-	"emby-proxy-cache/internal/store"
-	"emby-proxy-cache/internal/upstream"
+	"encache/internal/cache"
+	"encache/internal/config"
+	"encache/internal/interceptor"
+	"encache/internal/proxy"
+	"encache/internal/store"
+	"encache/internal/upstream"
 )
 
 func main() {

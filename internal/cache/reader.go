@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"emby-proxy-cache/internal/logging"
+	"encache/internal/logging"
 )
 
 const fillProgressLogInterval = 5 * time.Second

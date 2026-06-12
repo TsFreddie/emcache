@@ -1,4 +1,4 @@
-module emby-proxy-cache
+module encache
 
 go 1.25.0
 

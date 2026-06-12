@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"emby-proxy-cache/internal/store"
+	"encache/internal/store"
 )
 
 type fakeChunkStore struct {

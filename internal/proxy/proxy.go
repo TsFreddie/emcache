@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"emby-proxy-cache/internal/interceptor"
-	"emby-proxy-cache/internal/logging"
-	"emby-proxy-cache/internal/upstream"
+	"encache/internal/interceptor"
+	"encache/internal/logging"
+	"encache/internal/upstream"
 )
 
 const (

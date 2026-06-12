@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"emby-proxy-cache/internal/logging"
+	"encache/internal/logging"
 )
 
 type Logger struct {

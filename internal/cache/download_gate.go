@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"emby-proxy-cache/internal/logging"
+	"encache/internal/logging"
 )
 
 const downloadResumeDelay = 5 * time.Second

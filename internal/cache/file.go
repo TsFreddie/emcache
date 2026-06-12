@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"emby-proxy-cache/internal/store"
+	"encache/internal/store"
 )
 
 const (

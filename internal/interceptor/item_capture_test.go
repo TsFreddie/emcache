@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"emby-proxy-cache/internal/store"
+	"encache/internal/store"
 )
 
 func TestItemCaptureCapturesUserItemEndpoint(t *testing.T) {

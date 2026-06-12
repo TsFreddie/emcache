@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"emby-proxy-cache/internal/logging"
+	"encache/internal/logging"
 )
 
 const playbackSessionTTL = 2 * time.Minute
