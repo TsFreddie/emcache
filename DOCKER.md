@@ -54,6 +54,7 @@ docker run --rm \
 | Variable | Default In Image | Description |
 | --- | --- | --- |
 | `UPSTREAM_URL` | `http://localhost:8096` | Base URL of the upstream Emby server. Set this for normal container usage. |
+| `FALLBACK_UPSTREAM_URL` | unset | Optional fallback URL when the primary upstream is unreachable. |
 | `HOST` | `0.0.0.0` | Address the proxy binds to inside the container. |
 | `PORT` | `3000` | Port the proxy listens on inside the container. |
 | `STORAGE_PATH` | `/app/storage` | Container path for cached media chunks and SQLite metadata. |
