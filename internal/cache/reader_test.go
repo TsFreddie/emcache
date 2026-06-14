@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"encache/internal/upstream"
 )
 
 func TestValidateContentRange(t *testing.T) {
@@ -35,9 +37,9 @@ func TestFetchSegmentClearsFirstPendingOnEarlyFailure(t *testing.T) {
 	_, err := fetchSegment(ctx, file, 0, pending, FetchOptions{
 		Request:     &http.Request{Method: http.MethodGet, Header: make(http.Header)},
 		UpstreamURL: mustURL(t, "http://upstream/video.mkv"),
-		Client: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		Upstream: upstream.New(mustURL(t, "http://upstream"), nil, &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 			return nil, fmt.Errorf("upstream failed")
-		})},
+		})}),
 	})
 	if err == nil {
 		t.Fatal("expected fetch error")
@@ -64,7 +66,7 @@ func TestFetchSequentialWrapsToEarlierMissingChunkAndFinalizes(t *testing.T) {
 	err := fetchSequential(ctx, file, 2, pending, FetchOptions{
 		Request:     &http.Request{Method: http.MethodGet, Header: make(http.Header)},
 		UpstreamURL: mustURL(t, "http://upstream/video.mkv"),
-		Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		Upstream: upstream.New(mustURL(t, "http://upstream"), nil, &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			switch req.Header.Get("Range") {
 			case fmt.Sprintf("bytes=%d-", ChunkSize*2):
 				return partialResponse(req, ChunkSize*2, ChunkSize*3-1, ChunkSize*3, chunkBytes(2, ChunkSize)), nil
@@ -73,7 +75,7 @@ func TestFetchSequentialWrapsToEarlierMissingChunkAndFinalizes(t *testing.T) {
 			default:
 				return nil, fmt.Errorf("unexpected range %s", req.Header.Get("Range"))
 			}
-		})},
+		})}),
 	})
 	if err != nil {
 		t.Fatalf("fetch sequential: %v", err)
@@ -102,9 +104,9 @@ func TestFetchSegmentCancelsBlockedBodyReadAndClearsPending(t *testing.T) {
 		_, err := fetchSegment(ctx, file, 0, pending, FetchOptions{
 			Request:     &http.Request{Method: http.MethodGet, Header: make(http.Header)},
 			UpstreamURL: mustURL(t, "http://upstream/video.mkv"),
-			Client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			Upstream: upstream.New(mustURL(t, "http://upstream"), nil, &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				return partialResponseWithBody(req, 0, ChunkSize-1, ChunkSize, body), nil
-			})},
+			})}),
 		})
 		done <- err
 	}()
@@ -163,7 +165,7 @@ func TestActiveReadCanFetchCurrentChunkDuringReadahead(t *testing.T) {
 		Class:       SessionActive,
 		Request:     &http.Request{Method: http.MethodGet, Header: make(http.Header)},
 		UpstreamURL: mustURL(t, "http://upstream/video.mkv"),
-		Client:      client,
+		Upstream:    upstream.New(mustURL(t, "http://upstream"), nil, client),
 	})
 	if err != nil {
 		t.Fatalf("read range: %v", err)

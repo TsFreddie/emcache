@@ -61,7 +61,7 @@ func (s StreamCache) OnRequest(ctx *Context) (*http.Response, bool, error) {
 		Class:       cache.SessionActive,
 		Request:     req,
 		UpstreamURL: upstreamURL,
-		Client:      s.Cache.Client,
+		Upstream:    s.Cache.Upstream,
 		Gate:        s.Cache.Gate,
 	})
 	if err != nil {

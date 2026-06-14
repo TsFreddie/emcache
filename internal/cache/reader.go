@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"encache/internal/logging"
+	"encache/internal/upstream"
 )
 
 const fillProgressLogInterval = 5 * time.Second
@@ -28,7 +29,7 @@ type FetchOptions struct {
 	Class       SessionClass
 	Request     *http.Request
 	UpstreamURL *url.URL
-	Client      *http.Client
+	Upstream    *upstream.Upstream
 	Gate        *DownloadGate
 }
 
@@ -314,21 +315,23 @@ func fetchSegment(ctx context.Context, file *CachedFile, startIndex int, firstPe
 	if options.Request == nil || options.UpstreamURL == nil {
 		return fail(fmt.Errorf("missing upstream request details"))
 	}
-	client := options.Client
-	if client == nil {
-		client = http.DefaultClient
+	up := options.Upstream
+	if up == nil {
+		return fail(fmt.Errorf("missing upstream"))
 	}
 
 	start, _ := file.ChunkBounds(startIndex)
-	request, err := http.NewRequestWithContext(ctx, options.Request.Method, options.UpstreamURL.String(), nil)
-	if err != nil {
-		return fail(err)
-	}
-	copyFetchHeaders(request.Header, options.Request.Header)
-	request.Header.Set("Range", fmt.Sprintf("bytes=%d-", start))
-	request.Host = options.UpstreamURL.Host
+	header := options.Request.Header.Clone()
+	header.Set("Range", fmt.Sprintf("bytes=%d-", start))
 
-	response, err := client.Do(request)
+	requestURL := *options.UpstreamURL
+	requestURL.RawQuery = options.UpstreamURL.RawQuery
+
+	response, err := up.Do(ctx, &upstream.Request{
+		Method: options.Request.Method,
+		URL:    &requestURL,
+		Header: header,
+	})
 	if err != nil {
 		return fail(err)
 	}
@@ -521,24 +524,4 @@ func mbps(bytes int64, started time.Time) float64 {
 		seconds = 0.001
 	}
 	return mb(bytes) / seconds
-}
-
-func copyFetchHeaders(dst, src http.Header) {
-	for key, values := range src {
-		if isFetchHopHeader(key) || strings.EqualFold(key, "Range") {
-			continue
-		}
-		for _, value := range values {
-			dst.Add(key, value)
-		}
-	}
-}
-
-func isFetchHopHeader(key string) bool {
-	switch strings.ToLower(key) {
-	case "connection", "transfer-encoding", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "upgrade":
-		return true
-	default:
-		return false
-	}
 }

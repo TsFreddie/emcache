@@ -32,9 +32,10 @@ func main() {
 	defer store.Close()
 
 	upstreamClient := upstream.NewClient()
-	cacheManager := cache.NewManager(cfg.StoragePath, cfg.UpstreamURL, store)
-	cacheManager.Client = upstreamClient
+	sharedUpstream := upstream.New(cfg.UpstreamURL, cfg.FallbackUpstreamURL, upstreamClient)
+	cacheManager := cache.NewManager(cfg.StoragePath, cfg.UpstreamURL, cfg.FallbackUpstreamURL, upstreamClient, store)
 	cacheManager.StartDailyCleanup(context.Background(), cfg.CleanupDays)
+	cacheManager.Upstream = sharedUpstream
 	playbackEventLog := &interceptor.PlaybackEventLog{MaxSessions: cfg.MaxSessions}
 	chain := []interceptor.Interceptor{}
 	if cfg.EnableDownload {
@@ -47,7 +48,7 @@ func main() {
 		interceptor.Logger{},
 	)
 
-	handler := proxy.NewWithClient(cfg.UpstreamURL, upstreamClient, chain)
+	handler := proxy.NewWithUpstream(sharedUpstream, chain)
 	server := &http.Server{
 		Addr:              fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 		Handler:           handler,
@@ -56,6 +57,9 @@ func main() {
 
 	log.Printf("Emby Proxy running on http://%s:%d", cfg.Host, cfg.Port)
 	log.Printf("Upstream: %s", cfg.UpstreamURL.String())
+	if cfg.FallbackUpstreamURL != nil {
+		log.Printf("Fallback: %s", cfg.FallbackUpstreamURL.String())
+	}
 	log.Printf("Storage: %s", cfg.StoragePath)
 	if cfg.CleanupDays > 0 {
 		log.Printf("Cleanup: deleting files older than %d days", cfg.CleanupDays)

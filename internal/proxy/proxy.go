@@ -25,22 +25,20 @@ const (
 )
 
 type Proxy struct {
-	upstream     *url.URL
-	client       *http.Client
+	upstream     *upstream.Upstream
 	interceptors []interceptor.Interceptor
 }
 
-func New(upstreamURL *url.URL, interceptors []interceptor.Interceptor) *Proxy {
-	return NewWithClient(upstreamURL, upstream.NewClient(), interceptors)
+func New(primaryURL *url.URL, interceptors []interceptor.Interceptor) *Proxy {
+	return &Proxy{
+		upstream:     upstream.New(primaryURL, nil, upstream.NewClient()),
+		interceptors: interceptors,
+	}
 }
 
-func NewWithClient(upstreamURL *url.URL, client *http.Client, interceptors []interceptor.Interceptor) *Proxy {
-	if client == nil {
-		client = upstream.NewClient()
-	}
+func NewWithUpstream(up *upstream.Upstream, interceptors []interceptor.Interceptor) *Proxy {
 	return &Proxy{
-		upstream:     upstreamURL,
-		client:       client,
+		upstream:     up,
 		interceptors: interceptors,
 	}
 }
@@ -53,7 +51,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upstreamURL := p.buildUpstreamURL(r.URL)
+	isFallback := false
+	if p.upstream.Fallback != nil && strings.HasPrefix(r.URL.Path, "/fallback") {
+		isFallback = true
+		r.URL.Path = "/" + strings.TrimPrefix(r.URL.Path, "/fallback")
+		r.URL.Path = "/" + strings.TrimLeft(r.URL.Path, "/")
+	}
+
+	upstreamURL := p.upstream.BuildURL(r.URL, isFallback)
 	ctx := &interceptor.Context{
 		Request:     r,
 		UpstreamURL: upstreamURL.String(),
@@ -66,9 +71,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if !handled {
 		request := ctx.Request
-		upstreamURL = p.buildUpstreamURL(request.URL)
+		upstreamURL = p.upstream.BuildURL(request.URL, isFallback)
 		ctx.UpstreamURL = upstreamURL.String()
-		response, err = p.forward(request, upstreamURL)
+		response, err = p.forward(request, isFallback)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return
@@ -98,24 +103,46 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.writeResponse(w, r, response)
 }
 
-func (p *Proxy) buildUpstreamURL(requestURL *url.URL) *url.URL {
-	upstreamURL := *p.upstream
-	upstreamURL.Path = joinPath(p.upstream.Path, requestURL.Path)
-	upstreamURL.RawPath = ""
-	upstreamURL.RawQuery = requestURL.RawQuery
-	upstreamURL.Fragment = ""
-	return &upstreamURL
+func (p *Proxy) forward(r *http.Request, isFallback bool) (*http.Response, error) {
+	if isFallback {
+		return p.upstream.DoFallback(r.Context(), &upstream.Request{
+			Method:        r.Method,
+			URL:           r.URL,
+			Body:          r.Body,
+			GetBody:       r.GetBody,
+			Header:        r.Header,
+			ContentLength: r.ContentLength,
+		})
+	}
+	resp, err := p.upstream.Do(r.Context(), &upstream.Request{
+		Method:        r.Method,
+		URL:           r.URL,
+		Body:          r.Body,
+		GetBody:       r.GetBody,
+		Header:        r.Header,
+		ContentLength: r.ContentLength,
+		NoFallback:    true,
+	})
+	if err != nil && upstream.IsNetworkError(err) && p.upstream.Fallback != nil {
+		return p.fallbackRedirect(r, err), nil
+	}
+	return resp, err
 }
 
-func (p *Proxy) forward(r *http.Request, upstreamURL *url.URL) (*http.Response, error) {
-	request, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL.String(), r.Body)
-	if err != nil {
-		return nil, err
+func (p *Proxy) fallbackRedirect(r *http.Request, origErr error) *http.Response {
+	logging.Verbosef("[HTTP] upstream failed %s: %v — redirecting to /fallback\n", r.URL.String(), origErr)
+	redirectURL := "/fallback" + r.URL.Path
+	if r.URL.RawQuery != "" {
+		redirectURL += "?" + r.URL.RawQuery
 	}
-	copyRequestHeaders(request.Header, r.Header)
-	request.Host = upstreamURL.Host
-	request.ContentLength = r.ContentLength
-	return p.client.Do(request)
+	header := make(http.Header)
+	header.Set("Location", redirectURL)
+	return &http.Response{
+		StatusCode: http.StatusTemporaryRedirect,
+		Header:     header,
+		Body:       http.NoBody,
+		Request:    r,
+	}
 }
 
 func (p *Proxy) writeResponse(w http.ResponseWriter, r *http.Request, response *http.Response) {
@@ -169,17 +196,6 @@ func (p *Proxy) writeResponse(w http.ResponseWriter, r *http.Request, response *
 	}
 }
 
-func copyRequestHeaders(dst, src http.Header) {
-	for key, values := range src {
-		if isHopHeader(key) {
-			continue
-		}
-		for _, value := range values {
-			dst.Add(key, value)
-		}
-	}
-}
-
 func copyResponseHeaders(dst, src http.Header) {
 	for key, values := range src {
 		if isHopHeader(key) {
@@ -200,11 +216,36 @@ func isHopHeader(key string) bool {
 	}
 }
 
-func joinPath(base, path string) string {
-	if base == "" || base == "/" {
-		return path
+func isStreamResponse(response *http.Response) bool {
+	contentType := strings.ToLower(strings.TrimSpace(response.Header.Get("Content-Type")))
+	contentType, _, _ = strings.Cut(contentType, ";")
+	return strings.HasPrefix(contentType, "video/") ||
+		contentType == "application/octet-stream"
+}
+
+func shouldFlushHeaders(response *http.Response) bool {
+	return response.Header.Get("X-Emby-Proxy-Flush-Headers") == "1"
+}
+
+func isClientGone(err error) bool {
+	if err == nil {
+		return false
 	}
-	return strings.TrimRight(base, "/") + "/" + strings.TrimLeft(path, "/")
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "broken pipe") ||
+		strings.Contains(message, "connection reset by peer") ||
+		strings.Contains(message, "client disconnected")
+}
+
+func finishNote(err error, lastLog int64) string {
+	if err == nil {
+		return ""
+	}
+	return " canceled"
 }
 
 type countingWriter struct {
@@ -265,36 +306,4 @@ func (r *progressReader) Read(p []byte) (int, error) {
 		r.onProgress(r.total)
 	}
 	return n, err
-}
-
-func isStreamResponse(response *http.Response) bool {
-	contentType := strings.ToLower(strings.TrimSpace(response.Header.Get("Content-Type")))
-	contentType, _, _ = strings.Cut(contentType, ";")
-	return strings.HasPrefix(contentType, "video/") ||
-		contentType == "application/octet-stream"
-}
-
-func shouldFlushHeaders(response *http.Response) bool {
-	return response.Header.Get("X-Emby-Proxy-Flush-Headers") == "1"
-}
-
-func isClientGone(err error) bool {
-	if err == nil {
-		return false
-	}
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return true
-	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "broken pipe") ||
-		strings.Contains(message, "connection reset by peer") ||
-		strings.Contains(message, "client disconnected")
-}
-
-func finishNote(err error, lastLog int64) string {
-	if err == nil {
-		return ""
-	}
-	return " canceled"
 }

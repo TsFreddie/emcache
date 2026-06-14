@@ -1,19 +1,21 @@
 package config
 
 import (
+	"fmt"
 	"net/url"
 	"os"
 	"strconv"
 )
 
 type Config struct {
-	UpstreamURL    *url.URL
-	Host           string
-	Port           int
-	StoragePath    string
-	MaxSessions    int
-	EnableDownload bool
-	CleanupDays    int
+	UpstreamURL         *url.URL
+	FallbackUpstreamURL *url.URL
+	Host                string
+	Port                int
+	StoragePath         string
+	MaxSessions         int
+	EnableDownload      bool
+	CleanupDays         int
 }
 
 func Load() (Config, error) {
@@ -21,6 +23,15 @@ func Load() (Config, error) {
 	upstreamURL, err := url.Parse(upstream)
 	if err != nil {
 		return Config{}, err
+	}
+
+	fallbackRaw := getenv("FALLBACK_UPSTREAM_URL", "")
+	var fallbackUpstreamURL *url.URL
+	if fallbackRaw != "" {
+		fallbackUpstreamURL, err = url.Parse(fallbackRaw)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid FALLBACK_UPSTREAM_URL: %w", err)
+		}
 	}
 
 	port, err := strconv.Atoi(getenv("PORT", "3000"))
@@ -37,13 +48,14 @@ func Load() (Config, error) {
 	}
 
 	return Config{
-		UpstreamURL:    upstreamURL,
-		Host:           getenv("HOST", "0.0.0.0"),
-		Port:           port,
-		StoragePath:    getenv("STORAGE_PATH", "./storage"),
-		MaxSessions:    maxSessions,
-		EnableDownload: os.Getenv("ENABLE_DOWNLOAD") == "1",
-		CleanupDays:    cleanupDays,
+		UpstreamURL:         upstreamURL,
+		FallbackUpstreamURL: fallbackUpstreamURL,
+		Host:                getenv("HOST", "0.0.0.0"),
+		Port:                port,
+		StoragePath:         getenv("STORAGE_PATH", "./storage"),
+		MaxSessions:         maxSessions,
+		EnableDownload:      os.Getenv("ENABLE_DOWNLOAD") == "1",
+		CleanupDays:         cleanupDays,
 	}, nil
 }
 

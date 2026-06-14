@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"encache/internal/cache"
+	"encache/internal/upstream"
 
 	"github.com/fereidani/httpdecompressor"
 )
@@ -81,7 +82,7 @@ func (e EnableDownload) OnRequest(ctx *Context) (*http.Response, bool, error) {
 		Class:       cache.SessionPassive,
 		Request:     req,
 		UpstreamURL: upstreamURL,
-		Client:      e.Cache.Client,
+		Upstream:    e.Cache.Upstream,
 		Gate:        e.Cache.Gate,
 	})
 	if err != nil {
@@ -162,20 +163,17 @@ func (e EnableDownload) resolveDirectStreamURL(req *http.Request, itemID, mediaS
 	query.Set("mediaSourceId", mediaSourceID)
 	requestURL.RawQuery = query.Encode()
 
-	request, err := http.NewRequestWithContext(req.Context(), http.MethodPost, requestURL.String(), strings.NewReader(playbackBody))
-	if err != nil {
-		return nil, err
+	prepReq := &upstream.Request{
+		Method:  http.MethodPost,
+		URL:     &requestURL,
+		Body:    io.NopCloser(strings.NewReader(playbackBody)),
+		GetBody: func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(playbackBody)), nil },
+		Header:  req.Header.Clone(),
 	}
-	copyDownloadHeaders(request.Header, req.Header)
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Content-Type", "application/json")
-	request.Host = requestURL.Host
+	prepReq.Header.Set("Accept", "application/json")
+	prepReq.Header.Set("Content-Type", "application/json")
 
-	client := e.Cache.Client
-	if client == nil {
-		client = http.DefaultClient
-	}
-	response, err := client.Do(request)
+	response, err := e.Cache.Upstream.Do(req.Context(), prepReq)
 	if err != nil {
 		return nil, err
 	}
@@ -236,26 +234,6 @@ func decodeDownloadBody(body []byte, contentEncoding string) ([]byte, error) {
 
 func simpleResponse(req *http.Request, status int) *http.Response {
 	return &http.Response{StatusCode: status, Status: fmt.Sprintf("%d %s", status, http.StatusText(status)), Header: make(http.Header), Body: http.NoBody, Request: req}
-}
-
-func copyDownloadHeaders(dst, src http.Header) {
-	for key, values := range src {
-		if isDownloadHopHeader(key) || strings.EqualFold(key, "Range") {
-			continue
-		}
-		for _, value := range values {
-			dst.Add(key, value)
-		}
-	}
-}
-
-func isDownloadHopHeader(key string) bool {
-	switch strings.ToLower(key) {
-	case "connection", "transfer-encoding", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "upgrade":
-		return true
-	default:
-		return false
-	}
 }
 
 func joinURLPath(base, path string) string {

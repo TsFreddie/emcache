@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"encache/internal/store"
+	"encache/internal/upstream"
 )
 
 type Store interface {
@@ -24,6 +25,7 @@ type Manager struct {
 	StoragePath string
 	Client      *http.Client
 	UpstreamURL *url.URL
+	Upstream    *upstream.Upstream
 	Gate        *DownloadGate
 
 	mu    sync.Mutex
@@ -45,12 +47,16 @@ type Handle struct {
 	done   func() error
 }
 
-func NewManager(storagePath string, upstreamURL *url.URL, store Store) *Manager {
+func NewManager(storagePath string, upstreamURL, fallbackUpstreamURL *url.URL, client *http.Client, store Store) *Manager {
+	if client == nil {
+		client = upstream.NewClient()
+	}
 	return &Manager{
 		Store:       store,
 		StoragePath: storagePath,
-		Client:      http.DefaultClient,
+		Client:      client,
 		UpstreamURL: upstreamURL,
+		Upstream:    upstream.New(upstreamURL, fallbackUpstreamURL, client),
 		Gate:        NewDownloadGate(),
 		files:       make(map[string]*openFile),
 	}

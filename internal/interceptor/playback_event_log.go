@@ -45,6 +45,9 @@ func (p *PlaybackEventLog) OnRequest(ctx *Context) (*http.Response, bool, error)
 	}
 	_ = req.Body.Close()
 	req.Body = io.NopCloser(bytes.NewReader(body))
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(body)), nil
+	}
 	req.ContentLength = int64(len(body))
 
 	logging.Verbosef("[PlaybackEvent] %s %s body=%s\n", req.Method, req.URL.RequestURI(), string(body))
@@ -67,14 +70,14 @@ func (p *PlaybackEventLog) OnRequest(ctx *Context) (*http.Response, bool, error)
 
 	switch req.URL.Path {
 	case "/emby/Sessions/Playing":
-		if !p.acquire(event.PlaySessionID) {
+		if !p.canAcquire(event.PlaySessionID) {
 			fmt.Printf("[PlaybackEvent] decision=blocked path=%s playSessionId=%s active=%d max=%d\n", req.URL.Path, event.PlaySessionID, p.active(), p.MaxSessions)
 			return playbackBlockedResponse(req), true, nil
 		}
 		logging.Verbosef("[PlaybackEvent] decision=passthrough path=%s playSessionId=%s active=%d max=%d\n", req.URL.Path, event.PlaySessionID, p.active(), p.MaxSessions)
 	case "/emby/Sessions/Playing/Progress":
 		if !p.tracked(event.PlaySessionID) {
-			if !p.acquire(event.PlaySessionID) {
+			if !p.canAcquire(event.PlaySessionID) {
 				fmt.Printf("[PlaybackEvent] decision=blocked reason=untracked-session path=%s playSessionId=%s active=%d max=%d\n", req.URL.Path, event.PlaySessionID, p.active(), p.MaxSessions)
 				return playbackBlockedResponse(req), true, nil
 			}
@@ -91,9 +94,7 @@ func (p *PlaybackEventLog) OnRequest(ctx *Context) (*http.Response, bool, error)
 			fmt.Printf("[PlaybackEvent] decision=blocked reason=untracked-session path=%s playSessionId=%s active=%d max=%d\n", req.URL.Path, event.PlaySessionID, p.active(), p.MaxSessions)
 			return playbackBlockedResponse(req), true, nil
 		}
-		if p.release(event.PlaySessionID) {
-			fmt.Printf("[PlaybackEvent] decision=passthrough action=released path=%s playSessionId=%s active=%d max=%d\n", req.URL.Path, event.PlaySessionID, p.active(), p.MaxSessions)
-		}
+		logging.Verbosef("[PlaybackEvent] decision=passthrough path=%s playSessionId=%s active=%d max=%d\n", req.URL.Path, event.PlaySessionID, p.active(), p.MaxSessions)
 	}
 	return nil, false, nil
 }
@@ -125,6 +126,25 @@ func (p *PlaybackEventLog) OnResponse(ctx *Context, response *http.Response) (*h
 		}
 	}
 	logging.Verbosef("[PlaybackEvent] response path=%s playSessionId=%s statusCode=%d status=%q body=%s\n", ctx.Request.URL.Path, event.PlaySessionID, statusCode, status, string(body))
+
+	if statusCode < 200 || statusCode >= 300 {
+		return response, nil
+	}
+
+	switch ctx.Request.URL.Path {
+	case "/emby/Sessions/Playing":
+		if !p.acquire(event.PlaySessionID) {
+			fmt.Printf("[PlaybackEvent] acquire failed path=%s playSessionId=%s active=%d max=%d\n", ctx.Request.URL.Path, event.PlaySessionID, p.active(), p.MaxSessions)
+		} else {
+			fmt.Printf("[PlaybackEvent] acquired path=%s playSessionId=%s active=%d max=%d\n", ctx.Request.URL.Path, event.PlaySessionID, p.active(), p.MaxSessions)
+		}
+	case "/emby/Sessions/Playing/Progress":
+		p.tracked(event.PlaySessionID)
+	case "/emby/Sessions/Playing/Stopped":
+		if p.release(event.PlaySessionID) {
+			fmt.Printf("[PlaybackEvent] released path=%s playSessionId=%s active=%d max=%d\n", ctx.Request.URL.Path, event.PlaySessionID, p.active(), p.MaxSessions)
+		}
+	}
 	return response, nil
 }
 
@@ -132,6 +152,20 @@ func parsePlaybackEvent(body []byte) (playbackEvent, error) {
 	var event playbackEvent
 	err := json.Unmarshal(body, &event)
 	return event, err
+}
+
+func (p *PlaybackEventLog) canAcquire(playSessionID string) bool {
+	if p.MaxSessions < 0 {
+		return true
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.expireLocked(time.Now())
+	if p.sessions == nil {
+		return p.MaxSessions > 0
+	}
+	_, ok := p.sessions[playSessionID]
+	return ok || len(p.sessions) < p.MaxSessions
 }
 
 func (p *PlaybackEventLog) acquire(playSessionID string) bool {

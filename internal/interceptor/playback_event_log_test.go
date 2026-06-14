@@ -13,15 +13,18 @@ import (
 func TestPlaybackEventLogLimitsNewSessions(t *testing.T) {
 	log := &PlaybackEventLog{MaxSessions: 1}
 
-	response, handled, err := log.OnRequest(playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"one"}`))
+	ctx1 := playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"one"}`)
+	response, handled, err := log.OnRequest(ctx1)
 	if err != nil || handled || response != nil {
 		t.Fatalf("first session response=%v handled=%v err=%v", response, handled, err)
 	}
+	log.OnResponse(ctx1, successResponse(http.StatusOK))
 	if active := log.active(); active != 1 {
 		t.Fatalf("active sessions = %d, want 1", active)
 	}
 
-	response, handled, err = log.OnRequest(playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"two"}`))
+	ctx2 := playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"two"}`)
+	response, handled, err = log.OnRequest(ctx2)
 	if err != nil {
 		t.Fatalf("second session: %v", err)
 	}
@@ -68,7 +71,8 @@ func TestPlaybackEventLogNegativeDisablesLimit(t *testing.T) {
 	log := &PlaybackEventLog{MaxSessions: -1}
 
 	for _, playSessionID := range []string{"one", "two"} {
-		response, handled, err := log.OnRequest(playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"`+playSessionID+`"}`))
+		ctx := playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"`+playSessionID+`"}`)
+		response, handled, err := log.OnRequest(ctx)
 		if err != nil || handled || response != nil {
 			t.Fatalf("session %s response=%v handled=%v err=%v", playSessionID, response, handled, err)
 		}
@@ -81,10 +85,13 @@ func TestPlaybackEventLogNegativeDisablesLimit(t *testing.T) {
 func TestPlaybackEventLogAllowsExistingSession(t *testing.T) {
 	log := &PlaybackEventLog{MaxSessions: 1}
 
-	_, _, err := log.OnRequest(playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"one"}`))
+	ctx1 := playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"one"}`)
+	_, _, err := log.OnRequest(ctx1)
 	if err != nil {
 		t.Fatalf("first session: %v", err)
 	}
+	log.OnResponse(ctx1, successResponse(http.StatusOK))
+
 	response, handled, err := log.OnRequest(playbackContext("/emby/Sessions/Playing/Progress", `{"PlaySessionId":"one"}`))
 	if err != nil || handled || response != nil {
 		t.Fatalf("progress response=%v handled=%v err=%v", response, handled, err)
@@ -102,10 +109,12 @@ func TestPlaybackEventLogExpiresIdleSession(t *testing.T) {
 		},
 	}
 
-	response, handled, err := log.OnRequest(playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"two"}`))
+	ctx := playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"two"}`)
+	response, handled, err := log.OnRequest(ctx)
 	if err != nil || handled || response != nil {
 		t.Fatalf("new session response=%v handled=%v err=%v", response, handled, err)
 	}
+	log.OnResponse(ctx, successResponse(http.StatusOK))
 	if active := log.active(); active != 1 {
 		t.Fatalf("active sessions = %d, want 1", active)
 	}
@@ -128,6 +137,7 @@ func TestPlaybackEventLogPromotesUntrackedProgressWhenSlotAvailable(t *testing.T
 	if ctx.Request.URL.Path != "/emby/Sessions/Playing" {
 		t.Fatalf("path = %q, want /emby/Sessions/Playing", ctx.Request.URL.Path)
 	}
+	log.OnResponse(ctx, successResponse(http.StatusOK))
 	if active := log.active(); active != 1 {
 		t.Fatalf("active sessions = %d, want 1", active)
 	}
@@ -151,10 +161,12 @@ func TestPlaybackEventLogPromotesUntrackedProgressWhenSlotAvailable(t *testing.T
 
 func TestPlaybackEventLogBlocksUntrackedProgressWhenFull(t *testing.T) {
 	log := &PlaybackEventLog{MaxSessions: 1}
-	_, _, err := log.OnRequest(playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"one"}`))
+	ctx1 := playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"one"}`)
+	_, _, err := log.OnRequest(ctx1)
 	if err != nil {
 		t.Fatalf("first session: %v", err)
 	}
+	log.OnResponse(ctx1, successResponse(http.StatusOK))
 
 	response, handled, err := log.OnRequest(playbackContext("/emby/Sessions/Playing/Progress", `{"PlaySessionId":"unknown"}`))
 	if err != nil {
@@ -180,19 +192,25 @@ func TestPlaybackEventLogBlocksUntrackedStopped(t *testing.T) {
 func TestPlaybackEventLogReleasesStoppedSession(t *testing.T) {
 	log := &PlaybackEventLog{MaxSessions: 1}
 
-	_, _, err := log.OnRequest(playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"one"}`))
+	ctx1 := playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"one"}`)
+	_, _, err := log.OnRequest(ctx1)
 	if err != nil {
 		t.Fatalf("first session: %v", err)
 	}
-	_, _, err = log.OnRequest(playbackContext("/emby/Sessions/Playing/Stopped", `{"PlaySessionId":"one"}`))
+	log.OnResponse(ctx1, successResponse(http.StatusOK))
+
+	ctx2 := playbackContext("/emby/Sessions/Playing/Stopped", `{"PlaySessionId":"one"}`)
+	_, _, err = log.OnRequest(ctx2)
 	if err != nil {
 		t.Fatalf("stopped session: %v", err)
 	}
+	log.OnResponse(ctx2, successResponse(http.StatusOK))
 	if active := log.active(); active != 0 {
 		t.Fatalf("active sessions = %d, want 0", active)
 	}
 
-	response, handled, err := log.OnRequest(playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"two"}`))
+	ctx3 := playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"two"}`)
+	response, handled, err := log.OnRequest(ctx3)
 	if err != nil || handled || response != nil {
 		t.Fatalf("new session response=%v handled=%v err=%v", response, handled, err)
 	}
@@ -223,12 +241,8 @@ func TestPlaybackEventLogRestoresResponseBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	response := &http.Response{
-		StatusCode: http.StatusOK,
-		Status:     "200 OK",
-		Header:     http.Header{},
-		Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
-	}
+	response := successResponse(http.StatusOK)
+	response.Body = io.NopCloser(strings.NewReader(`{"ok":true}`))
 	response, err = log.OnResponse(ctx, response)
 	if err != nil {
 		t.Fatalf("response: %v", err)
@@ -242,6 +256,35 @@ func TestPlaybackEventLogRestoresResponseBody(t *testing.T) {
 	}
 	if response.ContentLength != int64(len(`{"ok":true}`)) {
 		t.Fatalf("content length = %d", response.ContentLength)
+	}
+}
+
+func TestPlaybackEventLogDoesNotTrackOnUpstreamFailure(t *testing.T) {
+	log := &PlaybackEventLog{MaxSessions: 1}
+
+	ctx := playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"one"}`)
+	_, _, err := log.OnRequest(ctx)
+	if err != nil {
+		t.Fatalf("first session: %v", err)
+	}
+	log.OnResponse(ctx, successResponse(http.StatusBadGateway))
+	if active := log.active(); active != 0 {
+		t.Fatalf("active sessions = %d, want 0 (should not track on 502)", active)
+	}
+
+	ctx2 := playbackContext("/emby/Sessions/Playing", `{"PlaySessionId":"two"}`)
+	response, handled, err := log.OnRequest(ctx2)
+	if err != nil || handled || response != nil {
+		t.Fatalf("second session should pass (slot still available): response=%v handled=%v err=%v", response, handled, err)
+	}
+}
+
+func successResponse(statusCode int) *http.Response {
+	return &http.Response{
+		StatusCode: statusCode,
+		Status:     http.StatusText(statusCode),
+		Header:     http.Header{},
+		Body:       http.NoBody,
 	}
 }
 
