@@ -70,6 +70,8 @@ func (u *Upstream) doWithBase(ctx context.Context, req *Request, isFallback bool
 	if isFallback {
 		if req.GetBody != nil {
 			body, _ = req.GetBody()
+		} else {
+			body = req.Body
 		}
 	} else {
 		body = req.Body
