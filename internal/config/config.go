@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"time"
 )
 
 type Config struct {
@@ -16,6 +17,7 @@ type Config struct {
 	MaxSessions         int
 	EnableDownload      bool
 	CleanupDays         int
+	FallbackDuration    time.Duration
 }
 
 func Load() (Config, error) {
@@ -46,6 +48,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	fallbackMinutes, err := strconv.Atoi(getenv("FALLBACK_DURATION_MINUTES", "10"))
+	if err != nil {
+		return Config{}, fmt.Errorf("invalid FALLBACK_DURATION_MINUTES: %w", err)
+	}
 
 	return Config{
 		UpstreamURL:         upstreamURL,
@@ -56,6 +62,7 @@ func Load() (Config, error) {
 		MaxSessions:         maxSessions,
 		EnableDownload:      os.Getenv("ENABLE_DOWNLOAD") == "1",
 		CleanupDays:         cleanupDays,
+		FallbackDuration:    time.Duration(fallbackMinutes) * time.Minute,
 	}, nil
 }
 
