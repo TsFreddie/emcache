@@ -100,6 +100,9 @@ func (u *Upstream) doWithBase(ctx context.Context, req *Request, isFallback bool
 	}
 
 	var body io.Reader
+	var bufferDone <-chan error     // set when parallel buffering is active
+	var closePipeReader func()      // set when parallel buffering is active
+
 	if isFallback {
 		if req.GetBody != nil {
 			rc, _ := req.GetBody()
@@ -110,29 +113,28 @@ func (u *Upstream) doWithBase(ctx context.Context, req *Request, isFallback bool
 			body = req.Body
 		}
 	} else {
-		body = req.Body
-		if req.GetBody != nil {
-			if freshBody, bodyErr := req.GetBody(); bodyErr == nil {
-				body = freshBody
+		// Parallel buffer: drain body into cachedBody while simultaneously
+		// feeding upstream via io.Pipe. If upstream fails, cachedBody is
+		// already ready for fallback retry.
+		if req.Body != nil && u.Fallback != nil && !req.NoFallback && req.cachedBody == nil {
+			pipeBody, done, closeReader := startParallelBuffer(req)
+			body = pipeBody
+			bufferDone = done
+			closePipeReader = closeReader
+		} else {
+			body = req.Body
+			if req.GetBody != nil {
+				if freshBody, bodyErr := req.GetBody(); bodyErr == nil {
+					body = freshBody
+				}
 			}
-		}
-		// Buffer body before first send so fallback retry can replay it.
-		// Only buffer if fallback is available and not disabled.
-		if body != nil && u.Fallback != nil && !req.NoFallback && req.cachedBody == nil {
-			var buf bytes.Buffer
-			_, readErr := io.Copy(&buf, body.(io.Reader))
-			if closer, ok := body.(io.Closer); ok {
-				closer.Close()
-			}
-			if readErr != nil {
-				return nil, readErr
-			}
-			req.cachedBody = buf.Bytes()
-			body = bytes.NewReader(req.cachedBody)
 		}
 	}
 	request, err := http.NewRequestWithContext(ctx, req.Method, requestURL.String(), body)
 	if err != nil {
+		if closePipeReader != nil {
+			closePipeReader()
+		}
 		return nil, err
 	}
 	copyHeaders(request.Header, req.Header)
@@ -142,6 +144,17 @@ func (u *Upstream) doWithBase(ctx context.Context, req *Request, isFallback bool
 	}
 	response, err := u.Client.Do(request)
 	if err != nil {
+		// Abort the pipe so the goroutine can finish buffering without
+		// blocking on pipeWriter.Write.
+		if closePipeReader != nil {
+			closePipeReader()
+		}
+		// Wait for buffering to complete before fallback retry.
+		if bufferDone != nil {
+			if bufferErr := <-bufferDone; bufferErr != nil {
+				return nil, bufferErr
+			}
+		}
 		if u.Fallback != nil && !isFallback && !req.NoFallback && isNetworkError(err) {
 			logging.Verbosef("[Upstream] failed %s: %v — retrying via fallback %s\n", request.URL.String(), err, u.Fallback.String())
 			resp, fbErr := u.doWithBase(ctx, req, true)
@@ -208,4 +221,58 @@ func joinPath(base, path string) string {
 		return path
 	}
 	return strings.TrimRight(base, "/") + "/" + strings.TrimLeft(path, "/")
+}
+
+// startParallelBuffer drains req.Body into req.cachedBody while simultaneously
+// feeding a copy to the upstream via an io.Pipe. Returns the pipe-wrapped reader
+// (to be used as the upstream request body), a channel that resolves when
+// buffering is complete, and a function to close the pipe reader (unblocks the
+// goroutine if the upstream never reads from the pipe).
+func startParallelBuffer(req *Request) (io.Reader, <-chan error, func()) {
+	pipeReader, pipeWriter := io.Pipe()
+	var buf bytes.Buffer
+	done := make(chan error, 1)
+
+	go func() {
+		chunk := make([]byte, 32*1024)
+		pipeActive := true
+
+		for {
+			n, readErr := req.Body.Read(chunk)
+			if n > 0 {
+				// Buffer always succeeds.
+				buf.Write(chunk[:n])
+
+				// Pipe may fail if upstream closed the reader.
+				if pipeActive {
+					if _, writeErr := pipeWriter.Write(chunk[:n]); writeErr != nil {
+						pipeWriter.CloseWithError(writeErr)
+						pipeActive = false
+					}
+				}
+			}
+			if readErr != nil {
+				if readErr != io.EOF {
+					if pipeActive {
+						pipeWriter.CloseWithError(readErr)
+					}
+					if closer, ok := req.Body.(io.Closer); ok {
+						closer.Close()
+					}
+					done <- readErr
+					return
+				}
+				break
+			}
+		}
+
+		pipeWriter.Close()
+		if closer, ok := req.Body.(io.Closer); ok {
+			closer.Close()
+		}
+		req.cachedBody = buf.Bytes()
+		done <- nil
+	}()
+
+	return pipeReader, done, func() { pipeReader.Close() }
 }
