@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"encache/internal/store"
+	"emcache/internal/store"
 )
 
 const (

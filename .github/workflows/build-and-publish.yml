@@ -26,23 +26,23 @@ jobs:
           cache: true
 
       - name: Build binary
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/encache ./cmd/encache
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/emcache ./cmd/emcache
 
       - name: Package binary
-        run: zip -j dist/encache-linux-amd64.zip dist/encache
+        run: zip -j dist/emcache-linux-amd64.zip dist/emcache
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: encache-linux-amd64
-          path: dist/encache-linux-amd64.zip
+          name: emcache-linux-amd64
+          path: dist/emcache-linux-amd64.zip
           if-no-files-found: error
 
       - name: Publish release artifact
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/encache-linux-amd64.zip
+          files: dist/emcache-linux-amd64.zip
 
   publish-docker:
     if: startsWith(github.ref, 'refs/tags/v')

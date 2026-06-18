@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"encache/internal/upstream"
+	"emcache/internal/upstream"
 )
 
 func TestParallelBufferFallback(t *testing.T) {

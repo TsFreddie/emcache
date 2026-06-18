@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"encache/internal/store"
+	"emcache/internal/store"
 )
 
 type fakeManagerStore struct {

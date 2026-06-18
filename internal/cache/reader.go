@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"encache/internal/logging"
-	"encache/internal/upstream"
+	"emcache/internal/logging"
+	"emcache/internal/upstream"
 )
 
 const fillProgressLogInterval = 5 * time.Second

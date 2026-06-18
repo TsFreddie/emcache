@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"encache/internal/cache"
-	"encache/internal/logging"
+	"emcache/internal/cache"
+	"emcache/internal/logging"
 )
 
 var videoStreamPath = regexp.MustCompile(`^/emby/videos/([0-9]+)/(stream|original)\.([a-zA-Z0-9]+)$`)

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"encache/internal/upstream"
+	"emcache/internal/upstream"
 )
 
 func TestValidateContentRange(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"encache/internal/logging"
+	"emcache/internal/logging"
 )
 
 type Logger struct {

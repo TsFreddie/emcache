@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"encache/internal/store"
+	"emcache/internal/store"
 )
 
 func TestItemCaptureCapturesUserItemEndpoint(t *testing.T) {

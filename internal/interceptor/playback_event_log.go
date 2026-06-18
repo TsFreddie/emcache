@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"encache/internal/logging"
+	"emcache/internal/logging"
 )
 
 const playbackSessionTTL = 2 * time.Minute

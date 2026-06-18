@@ -6,13 +6,13 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/encache ./cmd/encache
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/emcache ./cmd/emcache
 
 FROM alpine:3.22
 
 WORKDIR /app
 
-COPY --from=build /out/encache /usr/local/bin/encache
+COPY --from=build /out/emcache /usr/local/bin/emcache
 
 ENV HOST=0.0.0.0 \
     PORT=3000 \
@@ -20,4 +20,4 @@ ENV HOST=0.0.0.0 \
 
 EXPOSE 3000
 
-ENTRYPOINT ["encache"]
+ENTRYPOINT ["emcache"]

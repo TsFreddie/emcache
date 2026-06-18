@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"encache/internal/logging"
+	"emcache/internal/logging"
 )
 
 const downloadResumeDelay = 5 * time.Second

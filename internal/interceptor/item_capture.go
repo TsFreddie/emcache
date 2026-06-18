@@ -12,8 +12,8 @@ import (
 	"strings"
 	"sync"
 
-	"encache/internal/logging"
-	"encache/internal/store"
+	"emcache/internal/logging"
+	"emcache/internal/store"
 
 	"github.com/fereidani/httpdecompressor"
 )

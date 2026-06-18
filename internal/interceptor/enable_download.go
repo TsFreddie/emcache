@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	"encache/internal/cache"
-	"encache/internal/upstream"
+	"emcache/internal/cache"
+	"emcache/internal/upstream"
 
 	"github.com/fereidani/httpdecompressor"
 )

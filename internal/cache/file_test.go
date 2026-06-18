@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"encache/internal/store"
+	"emcache/internal/store"
 )
 
 type fakeChunkStore struct {

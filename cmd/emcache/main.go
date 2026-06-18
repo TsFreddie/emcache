@@ -8,12 +8,12 @@ import (
 	"os"
 	"time"
 
-	"encache/internal/cache"
-	"encache/internal/config"
-	"encache/internal/interceptor"
-	"encache/internal/proxy"
-	"encache/internal/store"
-	"encache/internal/upstream"
+	"emcache/internal/cache"
+	"emcache/internal/config"
+	"emcache/internal/interceptor"
+	"emcache/internal/proxy"
+	"emcache/internal/store"
+	"emcache/internal/upstream"
 )
 
 func main() {

@@ -1,4 +1,4 @@
-# Encache Docker Setup
+Emcache Docker Setup
 
 This project includes a multi-stage `Dockerfile` that builds the Go binary and runs it in a small Alpine-based image as a non-root user.
 
@@ -7,7 +7,7 @@ This project includes a multi-stage `Dockerfile` that builds the Go binary and r
 From the repository root:
 
 ```sh
-docker build -t encache:local .
+docker build -t emcache:local .
 ```
 
 Tagged releases are published to GitHub Container Registry as:
@@ -22,14 +22,14 @@ Run the proxy and persist cache storage in a named volume:
 
 ```sh
 docker run --rm \
-  --name encache \
+  --name emcache \
   -p 3000:3000 \
   -e UPSTREAM_URL=http://host.docker.internal:8096 \
-  -v encache-storage:/app/storage \
-  encache:local
+  -v emcache-storage:/app/storage \
+  emcache:local
 ```
 
-To use a published release, replace `encache:local` with the GHCR image tag for your repository.
+To use a published release, replace `emcache:local` with the GHCR image tag for your repository.
 
 On Linux, `host.docker.internal` may not be available by default. If your Emby server runs on the Docker host, add:
 
@@ -41,12 +41,12 @@ Full Linux example:
 
 ```sh
 docker run --rm \
-  --name encache \
+  --name emcache \
   --add-host=host.docker.internal:host-gateway \
   -p 3000:3000 \
   -e UPSTREAM_URL=http://host.docker.internal:8096 \
-  -v encache-storage:/app/storage \
-  encache:local
+  -v emcache-storage:/app/storage \
+  emcache:local
 ```
 
 ## Environment Variables
@@ -69,16 +69,16 @@ Use a volume or bind mount for `/app/storage` so cache files and `metadata.sqlit
 Named volume:
 
 ```sh
--v encache-storage:/app/storage
+-v emcache-storage:/app/storage
 ```
 
 Bind mount:
 
 ```sh
--v /path/on/host/encache:/app/storage
+-v /path/on/host/emcache:/app/storage
 ```
 
-If you use a bind mount, ensure the container user can write to the directory. The image runs as the non-root `encache` user.
+If you use a bind mount, ensure the container user can write to the directory. The image runs as the non-root `emcache` user.
 
 ## Docker Compose
 
@@ -86,22 +86,22 @@ Example `compose.yaml`:
 
 ```yaml
 services:
-  encache:
+  emcache:
     build: .
-    container_name: encache
+    container_name: emcache
     ports:
       - "3000:3000"
     environment:
       UPSTREAM_URL: http://host.docker.internal:8096
       CLEANUP_DAYS: "30"
     volumes:
-      - encache-storage:/app/storage
+      - emcache-storage:/app/storage
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
 volumes:
-  encache-storage:
+  emcache-storage:
 ```
 
 Start it with:
@@ -113,7 +113,7 @@ docker compose up -d --build
 View logs:
 
 ```sh
-docker logs -f encache
+docker logs -f emcache
 ```
 
 Stop it:

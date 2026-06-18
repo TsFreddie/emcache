@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"encache/internal/logging"
+	"emcache/internal/logging"
 )
 
 type Upstream struct {

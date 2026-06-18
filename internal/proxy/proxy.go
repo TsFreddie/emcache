@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"encache/internal/interceptor"
-	"encache/internal/upstream"
+	"emcache/internal/interceptor"
+	"emcache/internal/upstream"
 )
 
 const (

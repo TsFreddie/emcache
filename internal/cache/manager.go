@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"encache/internal/store"
-	"encache/internal/upstream"
+	"emcache/internal/store"
+	"emcache/internal/upstream"
 )
 
 type Store interface {
