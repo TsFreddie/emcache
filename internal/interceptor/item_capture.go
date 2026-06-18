@@ -113,7 +113,7 @@ func (t *teeCaptureCloser) process() {
 		inserted := 0
 		for _, mediaSource := range item.MediaSources {
 			mediaItemID := mediaSourceItemID(mediaSource, t.itemID)
-			ok, err := t.store.InsertMediaSource(context.Background(), store.MediaSource{
+			ok, err := t.store.UpsertMediaSource(context.Background(), store.MediaSource{
 				MediaSourceID: mediaSource.ID,
 				ItemID:        mediaItemID,
 				ItemName:      store.SanitizeFilename(mediaSourceItemName(mediaSource, mediaItemID)),

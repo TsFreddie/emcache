@@ -97,6 +97,61 @@ INSERT OR IGNORE INTO media_sources (
 	return rows > 0, nil
 }
 
+func (s *Store) UpsertMediaSource(ctx context.Context, source MediaSource) (bool, error) {
+	if !validMediaSource(source) {
+		return false, nil
+	}
+
+	var itemName, sourceName, container string
+	var size, bitrate int64
+	err := s.db.QueryRowContext(ctx, `
+SELECT item_name, source_name, size, container, bitrate
+FROM media_sources
+WHERE media_source_id = ?
+`, source.MediaSourceID).Scan(&itemName, &sourceName, &size, &container, &bitrate)
+
+	if err == nil {
+		if itemName == source.ItemName &&
+			sourceName == source.SourceName &&
+			size == source.Size &&
+			container == source.Container &&
+			bitrate == source.Bitrate {
+			return false, nil
+		}
+		result, err := s.db.ExecContext(ctx, `
+UPDATE media_sources
+SET item_name = ?, source_name = ?, size = ?, container = ?, bitrate = ?, updated_at = CURRENT_TIMESTAMP
+WHERE media_source_id = ?
+`, source.ItemName, source.SourceName, source.Size, source.Container, source.Bitrate, source.MediaSourceID)
+		if err != nil {
+			return false, err
+		}
+		rows, _ := result.RowsAffected()
+		return rows > 0, nil
+	}
+
+	if err != sql.ErrNoRows {
+		return false, err
+	}
+
+	result, err := s.db.ExecContext(ctx, `
+INSERT INTO media_sources (
+  media_source_id,
+  item_id,
+  item_name,
+  source_name,
+  size,
+  container,
+  bitrate
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+`, source.MediaSourceID, source.ItemID, source.ItemName, source.SourceName, source.Size, source.Container, source.Bitrate)
+	if err != nil {
+		return false, err
+	}
+	rows, _ := result.RowsAffected()
+	return rows > 0, nil
+}
+
 func (s *Store) GetMediaSource(ctx context.Context, mediaSourceID string) (MediaSource, bool, error) {
 	var source MediaSource
 	err := s.db.QueryRowContext(ctx, `
