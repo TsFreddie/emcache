@@ -54,6 +54,10 @@ func OpenCachedFile(ctx context.Context, storagePath string, source store.MediaS
 		if err != nil {
 			return nil, err
 		}
+		if err := touchAccessTime(path); err != nil {
+			_ = file.Close()
+			return nil, err
+		}
 		chunks := NewBitset(chunkCount)
 		for i := 0; i < chunkCount; i++ {
 			chunks.Set(i, true)
@@ -149,6 +153,16 @@ func (f *CachedFile) Close(ctx context.Context) error {
 		}
 	}
 	return f.file.Close()
+}
+
+func (f *CachedFile) Touch() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.finalized {
+		return touchAccessTime(f.path)
+	}
+	return touchAccessTime(f.progressPath)
 }
 
 func (f *CachedFile) Size() int64 {
@@ -329,4 +343,12 @@ func (f *CachedFile) finalizeLocked(ctx context.Context) error {
 
 func chunkCount(size int64) int {
 	return int((size + ChunkSize - 1) / ChunkSize)
+}
+
+func touchAccessTime(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	return os.Chtimes(path, time.Now(), info.ModTime())
 }

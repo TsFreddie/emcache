@@ -108,6 +108,33 @@ func TestCleanupOldFilesDeletesOldFilesExceptOpenFiles(t *testing.T) {
 	}
 }
 
+func TestCleanupOldFilesRemovesEmptyDirectories(t *testing.T) {
+	ctx := context.Background()
+	storagePath := t.TempDir()
+	manager := NewManager(storagePath, mustURL(t, "http://upstream"), nil, nil, &fakeManagerStore{}, 0)
+
+	oldTime := time.Now().AddDate(0, 0, -2)
+	oldDir := filepath.Join(storagePath, "old-item")
+	nestedOldFile := filepath.Join(oldDir, "nested", "old-source.mkv")
+	writeTestFile(t, nestedOldFile, oldTime)
+
+	recentDir := filepath.Join(storagePath, "recent-item")
+	recentFile := filepath.Join(recentDir, "recent-source.mkv")
+	writeTestFile(t, recentFile, time.Now())
+
+	manager.cleanupOldFiles(ctx, 1)
+
+	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
+		t.Fatalf("empty old directory still exists or stat failed: %v", err)
+	}
+	if _, err := os.Stat(recentDir); err != nil {
+		t.Fatalf("directory with retained file was removed: %v", err)
+	}
+	if _, err := os.Stat(storagePath); err != nil {
+		t.Fatalf("storage root was removed: %v", err)
+	}
+}
+
 func TestOpenWaitsForCleanup(t *testing.T) {
 	storagePath := t.TempDir()
 	source := testMediaSource(ChunkSize)

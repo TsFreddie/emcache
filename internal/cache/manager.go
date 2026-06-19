@@ -2,12 +2,15 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
+	"syscall"
 	"time"
 
 	"emcache/internal/store"
@@ -89,6 +92,10 @@ func (m *Manager) open(ctx context.Context, initialKey string, load func() (stri
 			handle := &Handle{Source: item.file.Source(), File: item.file}
 			handle.done = func() error { return m.release(context.Background(), initialKey) }
 			m.mu.Unlock()
+			if err := item.file.Touch(); err != nil {
+				_ = handle.Close()
+				return nil, err
+			}
 			return handle, nil
 		}
 		m.mu.Unlock()
@@ -111,6 +118,10 @@ func (m *Manager) open(ctx context.Context, initialKey string, load func() (stri
 		handle := &Handle{Source: item.file.Source(), File: item.file}
 		handle.done = func() error { return m.release(context.Background(), key) }
 		m.mu.Unlock()
+		if err := item.file.Touch(); err != nil {
+			_ = handle.Close()
+			return nil, err
+		}
 		return handle, nil
 	}
 	m.mu.Unlock()
@@ -168,12 +179,16 @@ func (m *Manager) cleanupOldFiles(ctx context.Context, retentionDays int) {
 	defer finish()
 
 	cutoff := time.Now().AddDate(0, 0, -retentionDays)
+	dirs := make([]string, 0)
 	if err := filepath.WalkDir(m.StoragePath, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			fmt.Printf("[CacheCleanup] skip path=%q err=%v\n", path, err)
 			return nil
 		}
 		if entry.IsDir() {
+			if path != m.StoragePath {
+				dirs = append(dirs, path)
+			}
 			return nil
 		}
 		if skipCleanupPath(path) || openPaths[path] {
@@ -184,7 +199,7 @@ func (m *Manager) cleanupOldFiles(ctx context.Context, retentionDays int) {
 			fmt.Printf("[CacheCleanup] stat path=%q err=%v\n", path, err)
 			return nil
 		}
-		if info.ModTime().After(cutoff) {
+		if accessTime(info).After(cutoff) {
 			return nil
 		}
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -193,6 +208,15 @@ func (m *Manager) cleanupOldFiles(ctx context.Context, retentionDays int) {
 		return nil
 	}); err != nil {
 		fmt.Printf("[CacheCleanup] walk storage=%q err=%v\n", m.StoragePath, err)
+	}
+
+	slices.SortFunc(dirs, func(a, b string) int {
+		return len(b) - len(a)
+	})
+	for _, dir := range dirs {
+		if err := os.Remove(dir); err != nil && !os.IsNotExist(err) && !isDirectoryNotEmpty(err) {
+			fmt.Printf("[CacheCleanup] remove dir=%q err=%v\n", dir, err)
+		}
 	}
 }
 
@@ -283,6 +307,10 @@ func (m *Manager) finishCleanup() {
 func skipCleanupPath(path string) bool {
 	base := filepath.Base(path)
 	return base == "metadata.sqlite" || base == "metadata.sqlite-wal" || base == "metadata.sqlite-shm"
+}
+
+func isDirectoryNotEmpty(err error) bool {
+	return errors.Is(err, syscall.ENOTEMPTY) || errors.Is(err, syscall.EEXIST)
 }
 
 func (h *Handle) Close() error {
